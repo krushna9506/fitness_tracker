@@ -1,0 +1,11 @@
+{
+  "name": "fitness-tracker-backend",
+  "version": "1.0.0",
+  "description": "Vercel Serverless API for Fitness Tracker connected to Neon DB",
+  "main": "api/index.js",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.9.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
