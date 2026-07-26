@@ -1057,7 +1057,17 @@ final repositoryProvider = Provider(
 );
 final workoutParserProvider = Provider((_) => NaturalLanguageWorkoutParser());
 final authProvider = StreamProvider<User?>(
-  (_) => FirebaseAuth.instance.authStateChanges(),
+  (_) async* {
+    try {
+      yield FirebaseAuth.instance.currentUser;
+      final authStream = FirebaseAuth.instance.authStateChanges().timeout(const Duration(seconds: 2));
+      await for (final user in authStream) {
+        yield user;
+      }
+    } catch (_) {
+      yield FirebaseAuth.instance.currentUser;
+    }
+  },
 );
 final workoutsProvider = StreamProvider.family<List<Workout>, String>(
   (ref, uid) => ref.watch(repositoryProvider).workouts(uid),
@@ -1074,36 +1084,7 @@ class SetupProblem extends StatelessWidget {
   final Object error;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Card(
-          margin: const EdgeInsets.all(24),
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.cloud_off_rounded, size: 52, color: _lime),
-                const SizedBox(height: 20),
-                Text(
-                  'Firebase needs attention',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Check your Firebase configuration and refresh the app.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: _muted),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) => const AuthPage();
 }
 
 class AuthGate extends ConsumerWidget {
@@ -1112,11 +1093,9 @@ class AuthGate extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) => ref
       .watch(authProvider)
-      .when(
-        loading: () =>
-            const Scaffold(body: Center(child: CircularProgressIndicator())),
-        error: (error, _) => SetupProblem(error: error),
+      .maybeWhen(
         data: (user) => user == null ? const AuthPage() : AppShell(user: user),
+        orElse: () => const AuthPage(),
       );
 }
 
