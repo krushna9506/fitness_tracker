@@ -1,17 +1,14 @@
 {
   "version": 2,
-  "routes": [
+  "outputDirectory": "public",
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/index.js"
+      "source": "/api/:match*",
+      "destination": "/api/index.js"
     },
     {
-      "src": "/(assets|canvaskit|icons|.*\\.(js|json|png|html|css|wasm|ttf|otf|frag|bin))",
-      "dest": "/public/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/public/index.html"
+      "source": "/:path*",
+      "destination": "/index.html"
     }
   ]
 }
