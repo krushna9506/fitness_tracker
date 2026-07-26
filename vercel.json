@@ -1,17 +1,17 @@
 {
   "version": 2,
-  "cleanUrls": true,
   "routes": [
     {
       "src": "/api/(.*)",
       "dest": "/api/index.js"
     },
     {
-      "handle": "filesystem"
+      "src": "/(assets|canvaskit|icons|.*\\.(js|json|png|html|css|wasm|ttf|otf|frag|bin))",
+      "dest": "/public/$1"
     },
     {
       "src": "/(.*)",
-      "dest": "/index.html"
+      "dest": "/public/index.html"
     }
   ]
 }
