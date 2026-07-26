@@ -1122,6 +1122,32 @@ class _AuthPageState extends State<AuthPage> {
     super.dispose();
   }
 
+  Future<void> _loginAsDemoUser() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await FirebaseAuth.instance.signInAnonymously();
+    } catch (_) {
+      try {
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: 'demo@pulsetracker.com',
+          password: 'demouser123',
+        );
+      } catch (_) {
+        try {
+          await FirebaseAuth.instance.createUserWithEmailAndPassword(
+            email: 'demo@pulsetracker.com',
+            password: 'demouser123',
+          );
+        } catch (_) {}
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -1301,6 +1327,22 @@ class _AuthPageState extends State<AuthPage> {
                               : Text(
                                   _createAccount ? 'Create account' : 'Sign in',
                                 ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 52),
+                            side: const BorderSide(color: Color(0xff303636)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: _busy ? null : _loginAsDemoUser,
+                          icon: const Icon(Icons.rocket_launch_rounded, color: _lime),
+                          label: const Text(
+                            'Explore with Demo Account',
+                            style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
+                          ),
                         ),
                         const SizedBox(height: 12),
                         TextButton(
