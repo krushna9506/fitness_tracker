@@ -728,6 +728,70 @@ class FitnessRepository {
   FitnessRepository(this._db);
   final FirebaseFirestore _db;
 
+  final List<Workout> _localWorkouts = [
+    Workout(
+      id: 'w1',
+      type: 'Morning Run',
+      duration: 30,
+      calories: 320,
+      time: DateTime.now().subtract(const Duration(hours: 3)),
+      intensity: 'Moderate',
+      notes: 'Refreshing morning jog',
+      rpe: 4,
+    ),
+    Workout(
+      id: 'w2',
+      type: 'HIIT Session',
+      duration: 45,
+      calories: 450,
+      time: DateTime.now().subtract(const Duration(days: 1)),
+      intensity: 'High',
+      notes: 'Core and leg interval workout',
+      rpe: 5,
+    ),
+    Workout(
+      id: 'w3',
+      type: 'Cycling',
+      duration: 60,
+      calories: 520,
+      time: DateTime.now().subtract(const Duration(days: 3)),
+      intensity: 'High',
+      notes: 'Outdoor trail cycle',
+      rpe: 4,
+    ),
+  ];
+
+  final List<TrainingPlan> _localPlans = [
+    const TrainingPlan(
+      id: 'p1',
+      name: '5K Builder',
+      description: '3 runs per week to build endurance for your first 5K.',
+      sessionsPerWeek: 3,
+      minutes: 30,
+    ),
+    const TrainingPlan(
+      id: 'p2',
+      name: 'Strength Base',
+      description: '3 full-body strength sessions per week.',
+      sessionsPerWeek: 3,
+      minutes: 45,
+    ),
+    const TrainingPlan(
+      id: 'p3',
+      name: 'Active Reset',
+      description: 'Light mobility and active recovery routine.',
+      sessionsPerWeek: 4,
+      minutes: 20,
+    ),
+  ];
+
+  final Map<String, dynamic> _localProfile = {
+    'weekly_goal': 4,
+    'weekly_calorie_goal': 2000,
+    'water_intake_ml': 1500,
+    'display_name': '',
+  };
+
   DocumentReference<Map<String, dynamic>> _profile(String uid) =>
       _db.collection('users').doc(uid);
   CollectionReference<Map<String, dynamic>> _workouts(String uid) =>
@@ -735,71 +799,160 @@ class FitnessRepository {
   CollectionReference<Map<String, dynamic>> _plans(String uid) =>
       _profile(uid).collection('plans');
 
-  Stream<List<Workout>> workouts(String uid) => _workouts(uid)
-      .snapshots()
-      .map((snapshot) {
-        final list = snapshot.docs.map(Workout.fromSnapshot).toList();
-        list.sort((a, b) => b.time.compareTo(a.time));
-        return list;
-      });
-
-  Stream<List<TrainingPlan>> plans(String uid) => _plans(uid)
-      .snapshots()
-      .map((snapshot) => snapshot.docs.map(TrainingPlan.fromSnapshot).toList());
-
-  Stream<Map<String, dynamic>> profile(String uid) =>
-      _profile(uid).snapshots().map((snapshot) => snapshot.data() ?? {});
-
-  Future<void> ensureProfile(User user) async {
-    final ref = _profile(user.uid);
-    final snap = await ref.get();
-    if (!snap.exists) {
-      await ref.set({
-        'email': user.email,
-        'display_name': user.displayName ?? '',
-        'weekly_goal': 4,
-        'weekly_calorie_goal': 2000,
-        'created_at': FieldValue.serverTimestamp(),
-      });
+  Stream<List<Workout>> workouts(String uid) async* {
+    yield List<Workout>.unmodifiable(_localWorkouts);
+    try {
+      final snapStream = _workouts(uid).snapshots().timeout(const Duration(seconds: 2));
+      await for (final snapshot in snapStream) {
+        if (snapshot.docs.isNotEmpty) {
+          final list = snapshot.docs.map(Workout.fromSnapshot).toList();
+          list.sort((a, b) => b.time.compareTo(a.time));
+          _localWorkouts.clear();
+          _localWorkouts.addAll(list);
+        }
+        yield List<Workout>.unmodifiable(_localWorkouts);
+      }
+    } catch (_) {
+      yield List<Workout>.unmodifiable(_localWorkouts);
     }
   }
 
-  Future<void> addWorkout(String uid, Workout workout) => _workouts(uid).add({
-    'exercise_type': workout.type,
-    'duration_minutes': workout.duration,
-    'calories_burned': workout.calories,
-    'timestamp': Timestamp.fromDate(workout.time),
-    'notes': workout.notes,
-    'intensity': workout.intensity,
-    'rpe': workout.rpe,
-    'created_at': FieldValue.serverTimestamp(),
-  });
+  Stream<List<TrainingPlan>> plans(String uid) async* {
+    yield List<TrainingPlan>.unmodifiable(_localPlans);
+    try {
+      final snapStream = _plans(uid).snapshots().timeout(const Duration(seconds: 2));
+      await for (final snapshot in snapStream) {
+        if (snapshot.docs.isNotEmpty) {
+          final list = snapshot.docs.map(TrainingPlan.fromSnapshot).toList();
+          _localPlans.clear();
+          _localPlans.addAll(list);
+        }
+        yield List<TrainingPlan>.unmodifiable(_localPlans);
+      }
+    } catch (_) {
+      yield List<TrainingPlan>.unmodifiable(_localPlans);
+    }
+  }
 
-  Future<void> deleteWorkout(String uid, String id) =>
-      _workouts(uid).doc(id).delete();
+  Stream<Map<String, dynamic>> profile(String uid) async* {
+    yield Map<String, dynamic>.unmodifiable(_localProfile);
+    try {
+      final snapStream = _profile(uid).snapshots().timeout(const Duration(seconds: 2));
+      await for (final snapshot in snapStream) {
+        final data = snapshot.data();
+        if (data != null && data.isNotEmpty) {
+          _localProfile.addAll(data);
+        }
+        yield Map<String, dynamic>.unmodifiable(_localProfile);
+      }
+    } catch (_) {
+      yield Map<String, dynamic>.unmodifiable(_localProfile);
+    }
+  }
 
-  Future<void> addPlan(String uid, TrainingPlan plan) => _plans(uid).add({
-    'name': plan.name,
-    'description': plan.description,
-    'sessions_per_week': plan.sessionsPerWeek,
-    'minutes': plan.minutes,
-    'created_at': FieldValue.serverTimestamp(),
-  });
+  Future<void> ensureProfile(User user) async {
+    _localProfile['email'] = user.email ?? '';
+    _localProfile['display_name'] = user.displayName ?? '';
+    try {
+      final ref = _profile(user.uid);
+      final snap = await ref.get().timeout(const Duration(seconds: 2));
+      if (!snap.exists) {
+        await ref.set({
+          'email': user.email,
+          'display_name': user.displayName ?? '',
+          'weekly_goal': 4,
+          'weekly_calorie_goal': 2000,
+          'created_at': FieldValue.serverTimestamp(),
+        }).timeout(const Duration(seconds: 2));
+      } else if (snap.data() != null) {
+        _localProfile.addAll(snap.data()!);
+      }
+    } catch (_) {}
+  }
 
-  Future<void> deletePlan(String uid, String id) =>
-      _plans(uid).doc(id).delete();
+  Future<void> addWorkout(String uid, Workout workout) async {
+    final newWorkout = Workout(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      type: workout.type,
+      duration: workout.duration,
+      calories: workout.calories,
+      time: workout.time,
+      notes: workout.notes,
+      intensity: workout.intensity,
+      rpe: workout.rpe,
+    );
+    _localWorkouts.insert(0, newWorkout);
+    try {
+      await _workouts(uid).add({
+        'exercise_type': workout.type,
+        'duration_minutes': workout.duration,
+        'calories_burned': workout.calories,
+        'timestamp': Timestamp.fromDate(workout.time),
+        'notes': workout.notes,
+        'intensity': workout.intensity,
+        'rpe': workout.rpe,
+        'created_at': FieldValue.serverTimestamp(),
+      }).timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
 
-  Future<void> setWeeklyGoal(String uid, int goal) =>
-      _profile(uid).set({'weekly_goal': goal}, SetOptions(merge: true));
+  Future<void> deleteWorkout(String uid, String id) async {
+    _localWorkouts.removeWhere((w) => w.id == id);
+    try {
+      await _workouts(uid).doc(id).delete().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
 
-  Future<void> setWeeklyCalorieGoal(String uid, int goal) =>
-      _profile(uid).set({'weekly_calorie_goal': goal}, SetOptions(merge: true));
+  Future<void> addPlan(String uid, TrainingPlan plan) async {
+    final newPlan = TrainingPlan(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: plan.name,
+      description: plan.description,
+      sessionsPerWeek: plan.sessionsPerWeek,
+      minutes: plan.minutes,
+    );
+    _localPlans.insert(0, newPlan);
+    try {
+      await _plans(uid).add({
+        'name': plan.name,
+        'description': plan.description,
+        'sessions_per_week': plan.sessionsPerWeek,
+        'minutes': plan.minutes,
+        'created_at': FieldValue.serverTimestamp(),
+      }).timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
 
-  Future<void> updateWaterIntake(String uid, int amountMl) =>
-      _profile(uid).set({
+  Future<void> deletePlan(String uid, String id) async {
+    _localPlans.removeWhere((p) => p.id == id);
+    try {
+      await _plans(uid).doc(id).delete().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
+
+  Future<void> setWeeklyGoal(String uid, int goal) async {
+    _localProfile['weekly_goal'] = goal;
+    try {
+      await _profile(uid).set({'weekly_goal': goal}, SetOptions(merge: true)).timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
+
+  Future<void> setWeeklyCalorieGoal(String uid, int goal) async {
+    _localProfile['weekly_calorie_goal'] = goal;
+    try {
+      await _profile(uid).set({'weekly_calorie_goal': goal}, SetOptions(merge: true)).timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
+
+  Future<void> updateWaterIntake(String uid, int amountMl) async {
+    _localProfile['water_intake_ml'] = amountMl;
+    try {
+      await _profile(uid).set({
         'water_intake_ml': amountMl,
         'water_updated_at': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      }, SetOptions(merge: true)).timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
 
   Future<void> toggleChallengeDay(
     String uid,
