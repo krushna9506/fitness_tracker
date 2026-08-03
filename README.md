@@ -1,6 +1,6 @@
 # FitPulse • AI Fitness & Workout Analytics Engine
 
-[![LIVE DEMO](https://img.shields.io/badge/LIVE_DEMO-VERCEL-4c1?style=for-the-badge&logo=vercel&logoColor=white)](https://fitness-tracker-app-five.vercel.app/)
+[![LIVE DEMO](https://img.shields.io/badge/LIVE_DEMO-VERCEL-4c1?style=for-the-badge&logo=vercel&logoColor=white)](https://fitness-tracker-topaz-eta.vercel.app/)
 [![REPOSITORY](https://img.shields.io/badge/REPOSITORY-KRUSHNA9506%2FFITNESS__TRACKER-007EC6?style=for-the-badge&logo=github&logoColor=white)](https://github.com/krushna9506/fitness_tracker)
 [![FLUTTER](https://img.shields.io/badge/FLUTTER-3.X-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
 [![STATE MANAGEMENT](https://img.shields.io/badge/STATE_MANAGEMENT-RIVERPOD_3.X-2563EB?style=for-the-badge&logo=flutter&logoColor=white)](https://riverpod.dev)
