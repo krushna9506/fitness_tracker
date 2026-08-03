@@ -1047,24 +1047,88 @@ class AuthPage extends StatefulWidget {
 
 class _AuthPageState extends State<AuthPage> {
   final _formKey = GlobalKey<FormState>();
+  final _displayName = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _confirmPassword = TextEditingController();
   bool _createAccount = false;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _busy = false;
   String? _error;
+  String? _info;
 
   @override
   void dispose() {
+    _displayName.dispose();
     _email.dispose();
     _password.dispose();
+    _confirmPassword.dispose();
     super.dispose();
+  }
+
+  String _friendlyErrorMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'email-already-in-use':
+        return 'An account already exists for this email address. Try signing in.';
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+        return 'Incorrect email address or password. Please try again.';
+      case 'weak-password':
+        return 'Password is too weak. Please use at least 6 characters with a mixture of numbers and letters.';
+      case 'invalid-email':
+        return 'The email address format is invalid.';
+      case 'network-request-failed':
+        return 'Network connection failed. Please check your internet connection.';
+      case 'user-disabled':
+        return 'This account has been suspended.';
+      case 'too-many-requests':
+        return 'Too many failed attempts. Please try again in a few moments.';
+      default:
+        return e.message ?? 'An unexpected authentication error occurred.';
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    final emailText = _email.text.trim();
+    if (emailText.isEmpty || !emailText.contains('@')) {
+      setState(() {
+        _error = 'Please enter your valid email address above to receive a password reset link.';
+        _info = null;
+      });
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+      _info = null;
+    });
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: emailText);
+      if (mounted) {
+        setState(() {
+          _info = 'A password reset link has been sent to $emailText. Check your inbox!';
+        });
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() => _error = _friendlyErrorMessage(e));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Could not send reset email. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _loginAsDemoUser() async {
     setState(() {
       _busy = true;
       _error = null;
+      _info = null;
     });
     try {
       await FirebaseAuth.instance.signInAnonymously();
@@ -1089,16 +1153,28 @@ class _AuthPageState extends State<AuthPage> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_createAccount && _password.text != _confirmPassword.text) {
+      setState(() {
+        _error = 'Passwords do not match. Please re-enter your password.';
+        _info = null;
+      });
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
+      _info = null;
     });
     try {
       if (_createAccount) {
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _email.text.trim(),
           password: _password.text,
         );
+        final name = _displayName.text.trim();
+        if (name.isNotEmpty && credential.user != null) {
+          await credential.user!.updateDisplayName(name);
+        }
       } else {
         await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: _email.text.trim(),
@@ -1107,7 +1183,11 @@ class _AuthPageState extends State<AuthPage> {
       }
     } on FirebaseAuthException catch (error) {
       if (mounted) {
-        setState(() => _error = error.message ?? 'Could not authenticate.');
+        setState(() => _error = _friendlyErrorMessage(error));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Authentication error: ${e.toString()}');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1201,6 +1281,22 @@ class _AuthPageState extends State<AuthPage> {
                           style: const TextStyle(color: _muted),
                         ),
                         const SizedBox(height: 30),
+                        if (_createAccount) ...[
+                          TextFormField(
+                            controller: _displayName,
+                            textCapitalization: TextCapitalization.words,
+                            autofillHints: const [AutofillHints.name],
+                            decoration: const InputDecoration(
+                              labelText: 'Full Name',
+                              prefixIcon: Icon(Icons.person_outline),
+                            ),
+                            validator: (value) =>
+                                _createAccount && (value == null || value.trim().isEmpty)
+                                    ? 'Enter your name'
+                                    : null,
+                          ),
+                          const SizedBox(height: 14),
+                        ],
                         TextFormField(
                           controller: _email,
                           keyboardType: TextInputType.emailAddress,
@@ -1243,12 +1339,89 @@ class _AuthPageState extends State<AuthPage> {
                               ? null
                               : 'Use at least 6 characters',
                         ),
+                        if (_createAccount) ...[
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _confirmPassword,
+                            obscureText: _obscureConfirmPassword,
+                            autofillHints: const [AutofillHints.newPassword],
+                            onFieldSubmitted: (_) => _submit(),
+                            decoration: InputDecoration(
+                              labelText: 'Confirm Password',
+                              prefixIcon: const Icon(Icons.lock_reset_outlined),
+                              suffixIcon: IconButton(
+                                onPressed: () => setState(
+                                  () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                                ),
+                                icon: Icon(
+                                  _obscureConfirmPassword
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
+                                ),
+                              ),
+                            ),
+                            validator: (value) {
+                              if (!_createAccount) return null;
+                              if (value == null || value.isEmpty) {
+                                return 'Confirm your password';
+                              }
+                              if (value != _password.text) {
+                                return 'Passwords do not match';
+                              }
+                              return null;
+                            },
+                          ),
+                        ],
+                        if (!_createAccount)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _busy ? null : _resetPassword,
+                              child: const Text('Forgot password?'),
+                            ),
+                          ),
                         if (_error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 14),
-                            child: Text(
-                              _error!,
-                              style: const TextStyle(color: Color(0xffFFB4AB)),
+                          Container(
+                            margin: const EdgeInsets.only(top: 14),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xffFFB4AB).withValues(alpha: .15),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xffFFB4AB).withValues(alpha: .4)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.error_outline_rounded, color: Color(0xffFFB4AB), size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _error!,
+                                    style: const TextStyle(color: Color(0xffFFB4AB), fontSize: 13),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (_info != null)
+                          Container(
+                            margin: const EdgeInsets.only(top: 14),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: _lime.withValues(alpha: .15),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: _lime.withValues(alpha: .4)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.check_circle_outline_rounded, color: _lime, size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _info!,
+                                    style: const TextStyle(color: _lime, fontSize: 13),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         const SizedBox(height: 22),
@@ -1264,7 +1437,7 @@ class _AuthPageState extends State<AuthPage> {
                                   ),
                                 )
                               : Text(
-                                  _createAccount ? 'Create account' : 'Sign in',
+                                  _createAccount ? 'Create Account' : 'Sign In',
                                 ),
                         ),
                         const SizedBox(height: 12),
@@ -1287,9 +1460,11 @@ class _AuthPageState extends State<AuthPage> {
                         TextButton(
                           onPressed: _busy
                               ? null
-                              : () => setState(
-                                  () => _createAccount = !_createAccount,
-                                ),
+                              : () => setState(() {
+                                  _createAccount = !_createAccount;
+                                  _error = null;
+                                  _info = null;
+                                }),
                           child: Text(
                             _createAccount
                                 ? 'Already have an account? Sign in'
