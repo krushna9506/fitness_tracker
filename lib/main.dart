@@ -728,69 +728,9 @@ class FitnessRepository {
   FitnessRepository(this._db);
   final FirebaseFirestore _db;
 
-  final List<Workout> _localWorkouts = [
-    Workout(
-      id: 'w1',
-      type: 'Morning Run',
-      duration: 30,
-      calories: 320,
-      time: DateTime.now().subtract(const Duration(hours: 3)),
-      intensity: 'Moderate',
-      notes: 'Refreshing morning jog',
-      rpe: 4,
-    ),
-    Workout(
-      id: 'w2',
-      type: 'HIIT Session',
-      duration: 45,
-      calories: 450,
-      time: DateTime.now().subtract(const Duration(days: 1)),
-      intensity: 'High',
-      notes: 'Core and leg interval workout',
-      rpe: 5,
-    ),
-    Workout(
-      id: 'w3',
-      type: 'Cycling',
-      duration: 60,
-      calories: 520,
-      time: DateTime.now().subtract(const Duration(days: 3)),
-      intensity: 'High',
-      notes: 'Outdoor trail cycle',
-      rpe: 4,
-    ),
-  ];
-
-  final List<TrainingPlan> _localPlans = [
-    const TrainingPlan(
-      id: 'p1',
-      name: '5K Builder',
-      description: '3 runs per week to build endurance for your first 5K.',
-      sessionsPerWeek: 3,
-      minutes: 30,
-    ),
-    const TrainingPlan(
-      id: 'p2',
-      name: 'Strength Base',
-      description: '3 full-body strength sessions per week.',
-      sessionsPerWeek: 3,
-      minutes: 45,
-    ),
-    const TrainingPlan(
-      id: 'p3',
-      name: 'Active Reset',
-      description: 'Light mobility and active recovery routine.',
-      sessionsPerWeek: 4,
-      minutes: 20,
-    ),
-  ];
-
-  final Map<String, dynamic> _localProfile = {
-    'weekly_goal': 4,
-    'weekly_calorie_goal': 2000,
-    'water_intake_ml': 1500,
-    'display_name': '',
-  };
+  final Map<String, List<Workout>> _userWorkouts = {};
+  final Map<String, List<TrainingPlan>> _userPlans = {};
+  final Map<String, Map<String, dynamic>> _userProfiles = {};
 
   DocumentReference<Map<String, dynamic>> _profile(String uid) =>
       _db.collection('users').doc(uid);
@@ -800,62 +740,69 @@ class FitnessRepository {
       _profile(uid).collection('plans');
 
   Stream<List<Workout>> workouts(String uid) async* {
-    yield List<Workout>.unmodifiable(_localWorkouts);
+    yield List<Workout>.unmodifiable(_userWorkouts[uid] ?? []);
     try {
-      final snapStream = _workouts(uid).snapshots().timeout(const Duration(seconds: 2));
+      final snapStream = _workouts(uid).snapshots();
       await for (final snapshot in snapStream) {
-        if (snapshot.docs.isNotEmpty) {
-          final list = snapshot.docs.map(Workout.fromSnapshot).toList();
-          list.sort((a, b) => b.time.compareTo(a.time));
-          _localWorkouts.clear();
-          _localWorkouts.addAll(list);
-        }
-        yield List<Workout>.unmodifiable(_localWorkouts);
+        final list = snapshot.docs.map(Workout.fromSnapshot).toList();
+        list.sort((a, b) => b.time.compareTo(a.time));
+        _userWorkouts[uid] = list;
+        yield List<Workout>.unmodifiable(_userWorkouts[uid]!);
       }
     } catch (_) {
-      yield List<Workout>.unmodifiable(_localWorkouts);
+      yield List<Workout>.unmodifiable(_userWorkouts[uid] ?? []);
     }
   }
 
   Stream<List<TrainingPlan>> plans(String uid) async* {
-    yield List<TrainingPlan>.unmodifiable(_localPlans);
+    yield List<TrainingPlan>.unmodifiable(_userPlans[uid] ?? []);
     try {
-      final snapStream = _plans(uid).snapshots().timeout(const Duration(seconds: 2));
+      final snapStream = _plans(uid).snapshots();
       await for (final snapshot in snapStream) {
-        if (snapshot.docs.isNotEmpty) {
-          final list = snapshot.docs.map(TrainingPlan.fromSnapshot).toList();
-          _localPlans.clear();
-          _localPlans.addAll(list);
-        }
-        yield List<TrainingPlan>.unmodifiable(_localPlans);
+        final list = snapshot.docs.map(TrainingPlan.fromSnapshot).toList();
+        _userPlans[uid] = list;
+        yield List<TrainingPlan>.unmodifiable(_userPlans[uid]!);
       }
     } catch (_) {
-      yield List<TrainingPlan>.unmodifiable(_localPlans);
+      yield List<TrainingPlan>.unmodifiable(_userPlans[uid] ?? []);
     }
   }
 
   Stream<Map<String, dynamic>> profile(String uid) async* {
-    yield Map<String, dynamic>.unmodifiable(_localProfile);
+    final defaultProfile = _userProfiles[uid] ??= {
+      'weekly_goal': 4,
+      'weekly_calorie_goal': 2000,
+      'water_intake_ml': 0,
+      'display_name': '',
+    };
+    yield Map<String, dynamic>.unmodifiable(defaultProfile);
     try {
-      final snapStream = _profile(uid).snapshots().timeout(const Duration(seconds: 2));
+      final snapStream = _profile(uid).snapshots();
       await for (final snapshot in snapStream) {
         final data = snapshot.data();
-        if (data != null && data.isNotEmpty) {
-          _localProfile.addAll(data);
+        if (data != null) {
+          _userProfiles[uid] = {...defaultProfile, ...data};
         }
-        yield Map<String, dynamic>.unmodifiable(_localProfile);
+        yield Map<String, dynamic>.unmodifiable(_userProfiles[uid]!);
       }
     } catch (_) {
-      yield Map<String, dynamic>.unmodifiable(_localProfile);
+      yield Map<String, dynamic>.unmodifiable(_userProfiles[uid] ?? defaultProfile);
     }
   }
 
   Future<void> ensureProfile(User user) async {
-    _localProfile['email'] = user.email ?? '';
-    _localProfile['display_name'] = user.displayName ?? '';
+    final uid = user.uid;
+    final prof = _userProfiles[uid] ??= {
+      'weekly_goal': 4,
+      'weekly_calorie_goal': 2000,
+      'water_intake_ml': 0,
+      'display_name': '',
+    };
+    prof['email'] = user.email ?? '';
+    prof['display_name'] = user.displayName ?? '';
     try {
-      final ref = _profile(user.uid);
-      final snap = await ref.get().timeout(const Duration(seconds: 2));
+      final ref = _profile(uid);
+      final snap = await ref.get();
       if (!snap.exists) {
         await ref.set({
           'email': user.email,
@@ -863,9 +810,9 @@ class FitnessRepository {
           'weekly_goal': 4,
           'weekly_calorie_goal': 2000,
           'created_at': FieldValue.serverTimestamp(),
-        }).timeout(const Duration(seconds: 2));
+        });
       } else if (snap.data() != null) {
-        _localProfile.addAll(snap.data()!);
+        prof.addAll(snap.data()!);
       }
     } catch (_) {}
   }
@@ -881,7 +828,8 @@ class FitnessRepository {
       intensity: workout.intensity,
       rpe: workout.rpe,
     );
-    _localWorkouts.insert(0, newWorkout);
+    final userList = _userWorkouts[uid] ??= [];
+    userList.insert(0, newWorkout);
     try {
       await _workouts(uid).add({
         'exercise_type': workout.type,
@@ -892,14 +840,14 @@ class FitnessRepository {
         'intensity': workout.intensity,
         'rpe': workout.rpe,
         'created_at': FieldValue.serverTimestamp(),
-      }).timeout(const Duration(seconds: 2));
+      });
     } catch (_) {}
   }
 
   Future<void> deleteWorkout(String uid, String id) async {
-    _localWorkouts.removeWhere((w) => w.id == id);
+    _userWorkouts[uid]?.removeWhere((w) => w.id == id);
     try {
-      await _workouts(uid).doc(id).delete().timeout(const Duration(seconds: 2));
+      await _workouts(uid).doc(id).delete();
     } catch (_) {}
   }
 
@@ -911,7 +859,8 @@ class FitnessRepository {
       sessionsPerWeek: plan.sessionsPerWeek,
       minutes: plan.minutes,
     );
-    _localPlans.insert(0, newPlan);
+    final userList = _userPlans[uid] ??= [];
+    userList.insert(0, newPlan);
     try {
       await _plans(uid).add({
         'name': plan.name,
@@ -919,38 +868,38 @@ class FitnessRepository {
         'sessions_per_week': plan.sessionsPerWeek,
         'minutes': plan.minutes,
         'created_at': FieldValue.serverTimestamp(),
-      }).timeout(const Duration(seconds: 2));
+      });
     } catch (_) {}
   }
 
   Future<void> deletePlan(String uid, String id) async {
-    _localPlans.removeWhere((p) => p.id == id);
+    _userPlans[uid]?.removeWhere((p) => p.id == id);
     try {
-      await _plans(uid).doc(id).delete().timeout(const Duration(seconds: 2));
+      await _plans(uid).doc(id).delete();
     } catch (_) {}
   }
 
   Future<void> setWeeklyGoal(String uid, int goal) async {
-    _localProfile['weekly_goal'] = goal;
+    (_userProfiles[uid] ??= {})['weekly_goal'] = goal;
     try {
-      await _profile(uid).set({'weekly_goal': goal}, SetOptions(merge: true)).timeout(const Duration(seconds: 2));
+      await _profile(uid).set({'weekly_goal': goal}, SetOptions(merge: true));
     } catch (_) {}
   }
 
   Future<void> setWeeklyCalorieGoal(String uid, int goal) async {
-    _localProfile['weekly_calorie_goal'] = goal;
+    (_userProfiles[uid] ??= {})['weekly_calorie_goal'] = goal;
     try {
-      await _profile(uid).set({'weekly_calorie_goal': goal}, SetOptions(merge: true)).timeout(const Duration(seconds: 2));
+      await _profile(uid).set({'weekly_calorie_goal': goal}, SetOptions(merge: true));
     } catch (_) {}
   }
 
   Future<void> updateWaterIntake(String uid, int amountMl) async {
-    _localProfile['water_intake_ml'] = amountMl;
+    (_userProfiles[uid] ??= {})['water_intake_ml'] = amountMl;
     try {
       await _profile(uid).set({
         'water_intake_ml': amountMl,
         'water_updated_at': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true)).timeout(const Duration(seconds: 2));
+      }, SetOptions(merge: true));
     } catch (_) {}
   }
 
@@ -1057,17 +1006,7 @@ final repositoryProvider = Provider(
 );
 final workoutParserProvider = Provider((_) => NaturalLanguageWorkoutParser());
 final authProvider = StreamProvider<User?>(
-  (_) async* {
-    try {
-      yield FirebaseAuth.instance.currentUser;
-      final authStream = FirebaseAuth.instance.authStateChanges().timeout(const Duration(seconds: 2));
-      await for (final user in authStream) {
-        yield user;
-      }
-    } catch (_) {
-      yield FirebaseAuth.instance.currentUser;
-    }
-  },
+  (_) => FirebaseAuth.instance.authStateChanges(),
 );
 final workoutsProvider = StreamProvider.family<List<Workout>, String>(
   (ref, uid) => ref.watch(repositoryProvider).workouts(uid),
