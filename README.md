@@ -1,15 +1,13 @@
-# 🏋️‍♂️ Fitness Tracker App
+# FitPulse • AI Fitness & Workout Analytics Engine
 
-[![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
-[![Dart](https://img.shields.io/badge/Dart-3.x-0175C2?logo=dart&logoColor=white)](https://dart.dev)
-[![Firebase](https://img.shields.io/badge/Firebase-Auth%20%26%20Firestore-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com)
-[![Neon DB](https://img.shields.io/badge/Neon-PostgreSQL-00E599?logo=postgresql&logoColor=black)](https://neon.tech)
-[![Vercel API](https://img.shields.io/badge/Vercel-Serverless%20API-000000?logo=vercel&logoColor=white)](https://vercel.com)
-[![Gemini AI](https://img.shields.io/badge/Google-Gemini%20AI-8E75B2?logo=google&logoColor=white)](https://ai.google.dev)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Internship Project](https://img.shields.io/badge/Project-Internship-blueviolet)](#)
+[![LIVE DEMO](https://img.shields.io/badge/LIVE_DEMO-VERCEL-4c1?style=for-the-badge&logo=vercel&logoColor=white)](https://fitness-tracker-app-five.vercel.app/)
+[![REPOSITORY](https://img.shields.io/badge/REPOSITORY-KRUSHNA9506%2FFITNESS__TRACKER-007EC6?style=for-the-badge&logo=github&logoColor=white)](https://github.com/krushna9506/fitness_tracker)
+[![FLUTTER](https://img.shields.io/badge/FLUTTER-3.X-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
+[![STATE MANAGEMENT](https://img.shields.io/badge/STATE_MANAGEMENT-RIVERPOD_3.X-2563EB?style=for-the-badge&logo=flutter&logoColor=white)](https://riverpod.dev)
+[![LICENSE](https://img.shields.io/badge/LICENSE-MIT-70B500?style=for-the-badge)](LICENSE)
+[![PLATFORM](https://img.shields.io/badge/PLATFORM-WEB_%7C_ANDROID_%7C_IOS-7A1EA1?style=for-the-badge&logo=flutter&logoColor=white)](#)
 
-> **Full-Stack Fitness & Workout Analytics Web Application** built with **Flutter Web**, **Riverpod State Management**, **Firebase Auth/Firestore**, **Neon PostgreSQL Serverless Backend**, and **Google Gemini AI**.
+> A production-grade, cross-platform health & fitness tracking application featuring Google Gemini AI workout recommendations, dual-database sync (Firebase Firestore + Neon PostgreSQL), dynamic chart analytics, and modern clean architecture. Built with Flutter, Riverpod, and Vercel Serverless.
 
 ---
 
