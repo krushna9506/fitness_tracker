@@ -1,3 +1,42 @@
-.dart_tool/
+# Miscellaneous & OS
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+
+# Environment & Secret Files
 .env
+.env.local
+.env.*.local
+*.env
+
+# User-specific & IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.metadata
+
+# Flutter & Dart generated files
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
 build/
+
+# Firebase & Deployment Caches
+.firebase/
+
+# Node & Package Managers
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
