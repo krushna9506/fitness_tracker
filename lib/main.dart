@@ -732,6 +732,10 @@ class FitnessRepository {
   final Map<String, List<TrainingPlan>> _userPlans = {};
   final Map<String, Map<String, dynamic>> _userProfiles = {};
 
+  final Map<String, StreamController<List<Workout>>> _workoutControllers = {};
+  final Map<String, StreamController<List<TrainingPlan>>> _planControllers = {};
+  final Map<String, StreamController<Map<String, dynamic>>> _profileControllers = {};
+
   DocumentReference<Map<String, dynamic>> _profile(String uid) =>
       _db.collection('users').doc(uid);
   CollectionReference<Map<String, dynamic>> _workouts(String uid) =>
@@ -739,55 +743,79 @@ class FitnessRepository {
   CollectionReference<Map<String, dynamic>> _plans(String uid) =>
       _profile(uid).collection('plans');
 
-  Stream<List<Workout>> workouts(String uid) async* {
-    yield List<Workout>.unmodifiable(_userWorkouts[uid] ?? []);
-    try {
-      final snapStream = _workouts(uid).snapshots();
-      await for (final snapshot in snapStream) {
+  StreamController<List<Workout>> _getWorkoutController(String uid) {
+    if (!_workoutControllers.containsKey(uid) || _workoutControllers[uid]!.isClosed) {
+      final controller = StreamController<List<Workout>>.broadcast();
+      _workoutControllers[uid] = controller;
+      _workouts(uid).snapshots().listen((snapshot) {
         final list = snapshot.docs.map(Workout.fromSnapshot).toList();
         list.sort((a, b) => b.time.compareTo(a.time));
         _userWorkouts[uid] = list;
-        yield List<Workout>.unmodifiable(_userWorkouts[uid]!);
-      }
-    } catch (_) {
-      yield List<Workout>.unmodifiable(_userWorkouts[uid] ?? []);
+        if (!controller.isClosed) {
+          controller.add(List<Workout>.unmodifiable(_userWorkouts[uid]!));
+        }
+      }, onError: (_) {});
     }
+    return _workoutControllers[uid]!;
+  }
+
+  StreamController<List<TrainingPlan>> _getPlanController(String uid) {
+    if (!_planControllers.containsKey(uid) || _planControllers[uid]!.isClosed) {
+      final controller = StreamController<List<TrainingPlan>>.broadcast();
+      _planControllers[uid] = controller;
+      _plans(uid).snapshots().listen((snapshot) {
+        final list = snapshot.docs.map(TrainingPlan.fromSnapshot).toList();
+        _userPlans[uid] = list;
+        if (!controller.isClosed) {
+          controller.add(List<TrainingPlan>.unmodifiable(_userPlans[uid]!));
+        }
+      }, onError: (_) {});
+    }
+    return _planControllers[uid]!;
+  }
+
+  StreamController<Map<String, dynamic>> _getProfileController(String uid) {
+    if (!_profileControllers.containsKey(uid) || _profileControllers[uid]!.isClosed) {
+      final controller = StreamController<Map<String, dynamic>>.broadcast();
+      _profileControllers[uid] = controller;
+      final defaultProfile = _userProfiles[uid] ??= {
+        'weekly_goal': 4,
+        'weekly_calorie_goal': 2000,
+        'water_intake_ml': 0,
+        'display_name': '',
+      };
+      _profile(uid).snapshots().listen((snapshot) {
+        final data = snapshot.data();
+        if (data != null) {
+          _userProfiles[uid] = {...defaultProfile, ...data};
+        }
+        if (!controller.isClosed) {
+          controller.add(Map<String, dynamic>.unmodifiable(_userProfiles[uid]!));
+        }
+      }, onError: (_) {});
+    }
+    return _profileControllers[uid]!;
+  }
+
+  Stream<List<Workout>> workouts(String uid) async* {
+    yield List<Workout>.unmodifiable(_userWorkouts[uid] ?? []);
+    yield* _getWorkoutController(uid).stream;
   }
 
   Stream<List<TrainingPlan>> plans(String uid) async* {
     yield List<TrainingPlan>.unmodifiable(_userPlans[uid] ?? []);
-    try {
-      final snapStream = _plans(uid).snapshots();
-      await for (final snapshot in snapStream) {
-        final list = snapshot.docs.map(TrainingPlan.fromSnapshot).toList();
-        _userPlans[uid] = list;
-        yield List<TrainingPlan>.unmodifiable(_userPlans[uid]!);
-      }
-    } catch (_) {
-      yield List<TrainingPlan>.unmodifiable(_userPlans[uid] ?? []);
-    }
+    yield* _getPlanController(uid).stream;
   }
 
   Stream<Map<String, dynamic>> profile(String uid) async* {
-    final defaultProfile = _userProfiles[uid] ??= {
+    final defaultProf = _userProfiles[uid] ??= {
       'weekly_goal': 4,
       'weekly_calorie_goal': 2000,
       'water_intake_ml': 0,
       'display_name': '',
     };
-    yield Map<String, dynamic>.unmodifiable(defaultProfile);
-    try {
-      final snapStream = _profile(uid).snapshots();
-      await for (final snapshot in snapStream) {
-        final data = snapshot.data();
-        if (data != null) {
-          _userProfiles[uid] = {...defaultProfile, ...data};
-        }
-        yield Map<String, dynamic>.unmodifiable(_userProfiles[uid]!);
-      }
-    } catch (_) {
-      yield Map<String, dynamic>.unmodifiable(_userProfiles[uid] ?? defaultProfile);
-    }
+    yield Map<String, dynamic>.unmodifiable(defaultProf);
+    yield* _getProfileController(uid).stream;
   }
 
   Future<void> ensureProfile(User user) async {
@@ -800,6 +828,10 @@ class FitnessRepository {
     };
     prof['email'] = user.email ?? '';
     prof['display_name'] = user.displayName ?? '';
+    final controller = _getProfileController(uid);
+    if (!controller.isClosed) {
+      controller.add(Map<String, dynamic>.unmodifiable(prof));
+    }
     try {
       final ref = _profile(uid);
       final snap = await ref.get();
@@ -813,13 +845,16 @@ class FitnessRepository {
         });
       } else if (snap.data() != null) {
         prof.addAll(snap.data()!);
+        if (!controller.isClosed) {
+          controller.add(Map<String, dynamic>.unmodifiable(prof));
+        }
       }
     } catch (_) {}
   }
 
   Future<void> addWorkout(String uid, Workout workout) async {
     final newWorkout = Workout(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: workout.id.isNotEmpty ? workout.id : DateTime.now().millisecondsSinceEpoch.toString(),
       type: workout.type,
       duration: workout.duration,
       calories: workout.calories,
@@ -829,9 +864,14 @@ class FitnessRepository {
       rpe: workout.rpe,
     );
     final userList = _userWorkouts[uid] ??= [];
+    userList.removeWhere((w) => w.id == newWorkout.id);
     userList.insert(0, newWorkout);
+    final controller = _getWorkoutController(uid);
+    if (!controller.isClosed) {
+      controller.add(List<Workout>.unmodifiable(userList));
+    }
     try {
-      await _workouts(uid).add({
+      await _workouts(uid).doc(newWorkout.id).set({
         'exercise_type': workout.type,
         'duration_minutes': workout.duration,
         'calories_burned': workout.calories,
@@ -846,6 +886,10 @@ class FitnessRepository {
 
   Future<void> deleteWorkout(String uid, String id) async {
     _userWorkouts[uid]?.removeWhere((w) => w.id == id);
+    final controller = _getWorkoutController(uid);
+    if (!controller.isClosed) {
+      controller.add(List<Workout>.unmodifiable(_userWorkouts[uid] ?? []));
+    }
     try {
       await _workouts(uid).doc(id).delete();
     } catch (_) {}
@@ -853,16 +897,21 @@ class FitnessRepository {
 
   Future<void> addPlan(String uid, TrainingPlan plan) async {
     final newPlan = TrainingPlan(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: plan.id.isNotEmpty ? plan.id : DateTime.now().millisecondsSinceEpoch.toString(),
       name: plan.name,
       description: plan.description,
       sessionsPerWeek: plan.sessionsPerWeek,
       minutes: plan.minutes,
     );
     final userList = _userPlans[uid] ??= [];
+    userList.removeWhere((p) => p.id == newPlan.id);
     userList.insert(0, newPlan);
+    final controller = _getPlanController(uid);
+    if (!controller.isClosed) {
+      controller.add(List<TrainingPlan>.unmodifiable(userList));
+    }
     try {
-      await _plans(uid).add({
+      await _plans(uid).doc(newPlan.id).set({
         'name': plan.name,
         'description': plan.description,
         'sessions_per_week': plan.sessionsPerWeek,
@@ -874,27 +923,46 @@ class FitnessRepository {
 
   Future<void> deletePlan(String uid, String id) async {
     _userPlans[uid]?.removeWhere((p) => p.id == id);
+    final controller = _getPlanController(uid);
+    if (!controller.isClosed) {
+      controller.add(List<TrainingPlan>.unmodifiable(_userPlans[uid] ?? []));
+    }
     try {
       await _plans(uid).doc(id).delete();
     } catch (_) {}
   }
 
   Future<void> setWeeklyGoal(String uid, int goal) async {
-    (_userProfiles[uid] ??= {})['weekly_goal'] = goal;
+    final prof = _userProfiles[uid] ??= {};
+    prof['weekly_goal'] = goal;
+    final controller = _getProfileController(uid);
+    if (!controller.isClosed) {
+      controller.add(Map<String, dynamic>.unmodifiable(prof));
+    }
     try {
       await _profile(uid).set({'weekly_goal': goal}, SetOptions(merge: true));
     } catch (_) {}
   }
 
   Future<void> setWeeklyCalorieGoal(String uid, int goal) async {
-    (_userProfiles[uid] ??= {})['weekly_calorie_goal'] = goal;
+    final prof = _userProfiles[uid] ??= {};
+    prof['weekly_calorie_goal'] = goal;
+    final controller = _getProfileController(uid);
+    if (!controller.isClosed) {
+      controller.add(Map<String, dynamic>.unmodifiable(prof));
+    }
     try {
       await _profile(uid).set({'weekly_calorie_goal': goal}, SetOptions(merge: true));
     } catch (_) {}
   }
 
   Future<void> updateWaterIntake(String uid, int amountMl) async {
-    (_userProfiles[uid] ??= {})['water_intake_ml'] = amountMl;
+    final prof = _userProfiles[uid] ??= {};
+    prof['water_intake_ml'] = amountMl;
+    final controller = _getProfileController(uid);
+    if (!controller.isClosed) {
+      controller.add(Map<String, dynamic>.unmodifiable(prof));
+    }
     try {
       await _profile(uid).set({
         'water_intake_ml': amountMl,
@@ -914,68 +982,86 @@ class FitnessRepository {
     } else {
       updated.add(dayNumber);
     }
-    await _profile(
-      uid,
-    ).set({'completed_challenge_days': updated}, SetOptions(merge: true));
+    final prof = _userProfiles[uid] ??= {};
+    prof['completed_challenge_days'] = updated;
+    final controller = _getProfileController(uid);
+    if (!controller.isClosed) {
+      controller.add(Map<String, dynamic>.unmodifiable(prof));
+    }
+    try {
+      await _profile(uid).set({'completed_challenge_days': updated}, SetOptions(merge: true));
+    } catch (_) {}
   }
 
   Future<void> updateBodyMetrics(
     String uid,
     double heightCm,
     double weightKg,
-  ) => _profile(uid).set({
-    'height_cm': heightCm,
-    'weight_kg': weightKg,
-  }, SetOptions(merge: true));
+  ) async {
+    final prof = _userProfiles[uid] ??= {};
+    prof['height_cm'] = heightCm;
+    prof['weight_kg'] = weightKg;
+    final controller = _getProfileController(uid);
+    if (!controller.isClosed) {
+      controller.add(Map<String, dynamic>.unmodifiable(prof));
+    }
+    try {
+      await _profile(uid).set({
+        'height_cm': heightCm,
+        'weight_kg': weightKg,
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
 
   Future<AnomalyCheck?> anomalyCheck(String uid, Workout candidate) async {
     final candidateDay = DateUtils.dateOnly(candidate.time);
     final firstDay = candidateDay.subtract(const Duration(days: 28));
-    final snapshot = await _workouts(uid)
-        .where(
-          'timestamp',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(firstDay),
-        )
-        .get();
-    final totals = <DateTime, int>{
-      for (var offset = 1; offset <= 28; offset++)
-        candidateDay.subtract(Duration(days: offset)): 0,
-    };
-    var existingToday = 0;
-    for (final document in snapshot.docs) {
-      final workout = Workout.fromSnapshot(document);
-      final day = DateUtils.dateOnly(workout.time);
-      if (day == candidateDay) {
-        existingToday += workout.calories;
-      } else if (totals.containsKey(day)) {
-        totals[day] = totals[day]! + workout.calories;
+    try {
+      final snapshot = await _workouts(uid)
+          .where(
+            'timestamp',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(firstDay),
+          )
+          .get();
+      final totals = <DateTime, int>{
+        for (var offset = 1; offset <= 28; offset++)
+          candidateDay.subtract(Duration(days: offset)): 0,
+      };
+      var existingToday = 0;
+      for (final document in snapshot.docs) {
+        final workout = Workout.fromSnapshot(document);
+        final day = DateUtils.dateOnly(workout.time);
+        if (day == candidateDay) {
+          existingToday += workout.calories;
+        } else if (totals.containsKey(day)) {
+          totals[day] = totals[day]! + workout.calories;
+        }
       }
-    }
-    final samples = totals.values.map((value) => value.toDouble()).toList();
-    final mean =
-        samples.fold<double>(0, (total, value) => total + value) /
-        samples.length;
-    final variance =
-        samples.fold<double>(
-          0,
-          (total, value) => total + math.pow(value - mean, 2),
-        ) /
-        samples.length;
-    final threshold = mean + math.max(2 * math.sqrt(variance), 300);
-    final proposed = existingToday + candidate.calories;
-    if (proposed > threshold) {
-      return AnomalyCheck(
-        proposedDailyCalories: proposed,
-        usualDailyCalories: mean.round(),
-        threshold: threshold,
-      );
-    }
+      final samples = totals.values.map((value) => value.toDouble()).toList();
+      final mean =
+          samples.fold<double>(0, (total, value) => total + value) /
+          samples.length;
+      final variance =
+          samples.fold<double>(
+            0,
+            (total, value) => total + math.pow(value - mean, 2),
+          ) /
+          samples.length;
+      final threshold = mean + math.max(2 * math.sqrt(variance), 300);
+      final proposed = existingToday + candidate.calories;
+      if (proposed > threshold) {
+        return AnomalyCheck(
+          proposedDailyCalories: proposed,
+          usualDailyCalories: mean.round(),
+          threshold: threshold,
+        );
+      }
+    } catch (_) {}
     return null;
   }
 
   Future<void> seedDemo(String uid) async {
-    if ((await _workouts(uid).limit(1).get()).docs.isNotEmpty) return;
-    final batch = _db.batch();
+    final userList = _userWorkouts[uid] ??= [];
     const types = [
       'Run',
       'Strength',
@@ -987,17 +1073,38 @@ class FitnessRepository {
     ];
     for (var index = 0; index < 7; index++) {
       final date = DateTime.now().subtract(Duration(days: 6 - index));
-      batch.set(_workouts(uid).doc(), {
-        'exercise_type': types[index],
-        'duration_minutes': 25 + index * 5,
-        'calories_burned': 180 + index * 42,
-        'timestamp': Timestamp.fromDate(date),
-        'notes': 'Demo session',
-        'intensity': index.isEven ? 'Moderate' : 'High',
-        'created_at': FieldValue.serverTimestamp(),
-      });
+      final w = Workout(
+        id: 'demo_$index',
+        type: types[index],
+        duration: 25 + index * 5,
+        calories: 180 + index * 42,
+        time: date,
+        notes: 'Demo session',
+        intensity: index.isEven ? 'Moderate' : 'High',
+      );
+      userList.removeWhere((item) => item.id == w.id);
+      userList.insert(0, w);
     }
-    await batch.commit();
+    final controller = _getWorkoutController(uid);
+    if (!controller.isClosed) {
+      controller.add(List<Workout>.unmodifiable(userList));
+    }
+    try {
+      final batch = _db.batch();
+      for (var index = 0; index < 7; index++) {
+        final date = DateTime.now().subtract(Duration(days: 6 - index));
+        batch.set(_workouts(uid).doc('demo_$index'), {
+          'exercise_type': types[index],
+          'duration_minutes': 25 + index * 5,
+          'calories_burned': 180 + index * 42,
+          'timestamp': Timestamp.fromDate(date),
+          'notes': 'Demo session',
+          'intensity': index.isEven ? 'Moderate' : 'High',
+          'created_at': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    } catch (_) {}
   }
 }
 
